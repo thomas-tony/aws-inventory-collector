@@ -1,0 +1,37 @@
+/* Scrollbar */
+::-webkit-scrollbar {
+    width: .45rem;
+}
+::-webkit-scrollbar-thumb {
+    background-color: rgba(0, 0, 0, 0.4);
+    border-radius: 3px;
+}
+::-webkit-scrollbar-track{
+    background: #f8f9fa;
+}
+
+
+/* Disable Sidebar */
+@media (min-width:768px) {
+	body:not(.sidebar-mini-md):not(.sidebar-mini-xs):not(.layout-top-nav) .content-wrapper,
+	body:not(.sidebar-mini-md):not(.sidebar-mini-xs):not(.layout-top-nav) .main-footer,
+	body:not(.sidebar-mini-md):not(.sidebar-mini-xs):not(.layout-top-nav) .main-header {
+		margin-left: 0px
+	}
+}
+
+@media (min-width:768px) {
+	.sidebar-mini-md .content-wrapper,
+	.sidebar-mini-md .main-footer,
+	.sidebar-mini-md .main-header {
+		margin-left: 0px
+	}
+}
+
+@media (min-width:768px) {
+	.sidebar-mini-xs .content-wrapper,
+	.sidebar-mini-xs .main-footer,
+	.sidebar-mini-xs .main-header {
+		margin-left: 0px
+	}
+}

@@ -6,17 +6,18 @@ use Aws\Rds\RdsClient;
 use Aws\S3\S3Client;
 use Aws\Exception\AwsException;
 
-// Get form inputs
+#Get form inputs
 $accountName = $_POST['accountName'];
 $accountId = $_POST['accountId'];
 $accessKeyId = $_POST['accessKeyId'];
 $secretAccessKey = $_POST['secretAccessKey'];
+$sessionToken = $_POST['sessionToken'] ?? null;
 $service = $_POST['service'];
 $region = $_POST['region'];
 
-// Initialize AWS SDK client
+#Initialize AWS SDK client
 $sdkConfig = [
-    'region' => $region == 'all' ? 'us-east-1' : $region,
+    'region' => $region == 'all' ? 'ap-south-1' : $region,
     'version' => 'latest',
     'credentials' => [
         'key' => $accessKeyId,
@@ -24,7 +25,12 @@ $sdkConfig = [
     ],
 ];
 
-// Fetch inventory based on the service selected
+#Include session token if provided
+if (!empty($sessionToken)) {
+    $sdkConfig['credentials']['token'] = $sessionToken;
+}
+
+#Fetch inventory based on the service selected
 $inventoryData = [];
 
 try {
@@ -32,10 +38,10 @@ try {
         case 'ec2':
             $ec2Client = new Ec2Client($sdkConfig);
             $result = $ec2Client->describeInstances();
-            // Extract relevant data from the EC2 instances
+            #Extract relevant data from the EC2 instances
             foreach ($result['Reservations'] as $reservation) {
                 foreach ($reservation['Instances'] as $instance) {
-                    // Get Instance Name (from tags)
+                    #Get Instance Name (from tags)
                     $instanceName = 'N/A';
                     if (!empty($instance['Tags'])) {
                         foreach ($instance['Tags'] as $tag) {
@@ -46,14 +52,14 @@ try {
                         }
                     }
 
-                    // Get Security Group Names
+                    #Get Security Group Names
                     $securityGroups = [];
                     foreach ($instance['SecurityGroups'] as $sg) {
                         $securityGroups[] = $sg['GroupName'];
                     }
                     $securityGroupName = implode(', ', $securityGroups);
 
-                    // Get IPv6 addresses
+                    #Get IPv6 addresses
                     $ipv6Addresses = [];
                     if (!empty($instance['NetworkInterfaces'])) {
                         foreach ($instance['NetworkInterfaces'] as $interface) {
@@ -64,16 +70,16 @@ try {
                     }
                     $ipv6Ips = implode(', ', $ipv6Addresses);
 
-                    // Add instance data to inventory
+                    #Add instance data to inventory
                     $inventoryData[] = [
-                        'AccountId' => $accountId,
-                        'AccountName' => $accountName,
+                        'Account Id' => $accountId,
+                        'Account Name' => $accountName,
                         'Instance Name' => $instanceName,
                         'Instance ID' => $instance['InstanceId'],
                         'Instance state' => $instance['State']['Name'],
                         'Instance type' => $instance['InstanceType'],
-                        'Status check' => $instance['State']['Name'],  // Placeholder, can update with detailed status check
-                        'Alarm status' => 'N/A',  // Placeholder for CloudWatch Alarm status
+                        'Status check' => $instance['State']['Name'],  #Placeholder, can update with detailed status check
+                        'Alarm status' => 'N/A',  #Placeholder for CloudWatch Alarm status
                         'Availability Zone' => $instance['Placement']['AvailabilityZone'],
                         'Public IPv4 DNS' => $instance['PublicDnsName'] ?? 'N/A',
                         'Public IPv4 address' => $instance['PublicIpAddress'] ?? 'N/A',
@@ -92,10 +98,10 @@ try {
         case 'ami':
             $ec2Client = new Ec2Client($sdkConfig);
             $result = $ec2Client->describeImages([
-                'Owners' => [$accountId] // Filter images owned by this account
+                'Owners' => [$accountId] #Filter images owned by this account
             ]);
 
-            // Extract relevant AMI data
+            #Extract relevant AMI data
             foreach ($result['Images'] as $image) {
                 $blockDeviceMappings = [];
                 foreach ($image['BlockDeviceMappings'] as $bdm) {
@@ -104,6 +110,8 @@ try {
                 $blockDevices = implode(', ', $blockDeviceMappings);
 
                 $inventoryData[] = [
+                    'Account Id' => $accountId,
+                    'Account Name' => $accountName,
                     'AMI name' => $image['Name'] ?? 'N/A',
                     'AMI ID' => $image['ImageId'] ?? 'N/A',
                     'Source' => $image['ImageLocation'] ?? 'N/A',
@@ -126,7 +134,7 @@ try {
             $ec2Client = new Ec2Client($sdkConfig);
             $result = $ec2Client->describeVolumes();
 
-            // Extract relevant volume data
+            #Extract relevant volume data
             foreach ($result['Volumes'] as $volume) {
                 $attachedResources = [];
                 foreach ($volume['Attachments'] as $attachment) {
@@ -135,7 +143,9 @@ try {
                 $attachedResourcesStr = implode(', ', $attachedResources);
 
                 $inventoryData[] = [
-                    'Volume Name' => $volume['Tags'][0]['Value'] ?? 'N/A', // Assuming first tag is the name
+                    'Account Id' => $accountId,
+                    'Account Name' => $accountName,
+                    'Volume Name' => $volume['Tags'][0]['Value'] ?? 'N/A',
                     'Volume ID' => $volume['VolumeId'] ?? 'N/A',
                     'Type' => $volume['VolumeType'] ?? 'N/A',
                     'Size (GiB)' => $volume['Size'] ?? 'N/A',
@@ -145,38 +155,39 @@ try {
                     'Created' => $volume['CreateTime'] ?? 'N/A',
                     'Availability Zone' => $volume['AvailabilityZone'] ?? 'N/A',
                     'Volume State' => $volume['State'] ?? 'N/A',
-                    'Alarm Status' => 'N/A', // AWS doesn't provide direct alarm info for volumes, you may need CloudWatch for this
+                    'Alarm Status' => 'N/A', #AWS doesn't provide direct alarm info for volumes
                     'Attached Resources' => $attachedResourcesStr,
-                    'Volume Status' => $volume['State'] ?? 'N/A', // Volume state also shows volume status
                     'Encryption' => $volume['Encrypted'] ? 'Encrypted' : 'Not Encrypted',
                     'KMS Key ID' => $volume['KmsKeyId'] ?? 'N/A',
-                    'KMS Key Alias' => 'N/A', // This info may require a separate call to KMS to retrieve aliases
+                    'KMS Key Alias' => 'N/A', #Require a separate call to KMS to retrieve aliases
                     'Fast Snapshot Restored' => $volume['FastRestored'] ? 'Yes' : 'No',
                     'Multi-Attach Enabled' => $volume['MultiAttachEnabled'] ? 'Yes' : 'No',
                 ];
             }
             break;
         
-        case 'snapshot': // New case for EBS Snapshots
+        case 'ebs_snapshot':
             $ec2Client = new Ec2Client($sdkConfig);
             $result = $ec2Client->describeSnapshots([
-                'OwnerIds' => [$accountId] // Only retrieve snapshots owned by this account
+                'OwnerIds' => [$accountId]
             ]);
-
-            // Extract relevant snapshot data
+    
+            #Extract relevant EBS snapshot data
             foreach ($result['Snapshots'] as $snapshot) {
                 $inventoryData[] = [
-                    'Name' => $snapshot['Tags'][0]['Value'] ?? 'N/A', // Assuming first tag is the snapshot name
+                    'Account Id' => $accountId,
+                    'Account Name' => $accountName,
+                    'Name' => $snapshot['Tags'][0]['Value'] ?? 'N/A',
                     'Snapshot ID' => $snapshot['SnapshotId'] ?? 'N/A',
                     'Volume Size (GiB)' => $snapshot['VolumeSize'] ?? 'N/A',
                     'Description' => $snapshot['Description'] ?? 'N/A',
-                    'Storage Tier' => $snapshot['StorageTier'] ?? 'N/A', // Storage tier info
+                    'Storage Tier' => $snapshot['StorageTier'] ?? 'N/A',
                     'Snapshot Status' => $snapshot['State'] ?? 'N/A',
                     'Started' => $snapshot['StartTime'] ?? 'N/A',
                     'Progress' => $snapshot['Progress'] ?? 'N/A',
                     'Encryption' => $snapshot['Encrypted'] ? 'Encrypted' : 'Not Encrypted',
                     'KMS Key ID' => $snapshot['KmsKeyId'] ?? 'N/A',
-                    'KMS Key Alias' => 'N/A', // Requires separate KMS call to fetch alias
+                    'KMS Key Alias' => 'N/A', #Requires separate KMS call to fetch alias
                     'Outposts ARN' => $snapshot['OutpostArn'] ?? 'N/A',
                 ];
             }
@@ -187,49 +198,80 @@ try {
             $result = $rdsClient->describeDBInstances();
             foreach ($result['DBInstances'] as $dbInstance) {
                 $inventoryData[] = [
-                    'AccountName' => $accountName,
-                    'AccountId' => $accountId,
-                    'DBInstanceIdentifier' => $dbInstance['DBInstanceIdentifier'],
-                    'InstanceCreateTime' => isset($dbInstance['InstanceCreateTime']) ? $dbInstance['InstanceCreateTime']->format(DateTime::ISO8601) : 'N/A', 
+                    'Account Name' => $accountName,
+                    'Account Id' => $accountId,
+                    'DB Instance Identifier' => $dbInstance['DBInstanceIdentifier'],
+                    'Instance Create Time' => isset($dbInstance['InstanceCreateTime']) ? $dbInstance['InstanceCreateTime']->format(DateTime::ISO8601) : 'N/A', 
                     'Engine' => $dbInstance['Engine'],
                     'Status' => $dbInstance['DBInstanceStatus'],
-                    'AllocatedStorage' => $dbInstance['AllocatedStorage'],
-                    'DBInstanceClass' => $dbInstance['DBInstanceClass'],
-                    'MasterUsername' => $dbInstance['MasterUsername'],
-                    'EngineVersion' => $dbInstance['EngineVersion'],
-                    'LicenseModel' => $dbInstance['LicenseModel'],
-                    'DBInstanceArn' => $dbInstance['DBInstanceArn'],
-                    'IAMDatabaseAuthenticationEnabled' => $dbInstance['IAMDatabaseAuthenticationEnabled'] ? 'Enabled' : 'Disabled',
+                    'Allocated Storage' => $dbInstance['AllocatedStorage'],
+                    'DBInstance Class' => $dbInstance['DBInstanceClass'],
+                    'Master Username' => $dbInstance['MasterUsername'],
+                    'Engine Version' => $dbInstance['EngineVersion'],
+                    'License Model' => $dbInstance['LicenseModel'],
+                    'DB Instance Arn' => $dbInstance['DBInstanceArn'],
+                    'IAM Database Authentication Enabled' => $dbInstance['IAMDatabaseAuthenticationEnabled'] ? 'Enabled' : 'Disabled',
                     'Region' => $region,
                 ];
             }
             break;
+        
+        case 'rds_snapshot':
+            $rdsClient = new RdsClient($sdkConfig);
+            $result = $rdsClient->describeDBSnapshots([
+                'DBInstanceIdentifier' => $accountId
+            ]);
+    
+            #Extract relevant RDS snapshot data
+            foreach ($result['DBSnapshots'] as $snapshot) {
+                $inventoryData[] = [
+                    'Account Id' => $accountId,
+                    'Account Name' => $accountName,
+                    'Snapshot ID' => $snapshot['DBSnapshotIdentifier'] ?? 'N/A',
+                    'DB Instance ID' => $snapshot['DBInstanceIdentifier'] ?? 'N/A',
+                    'Snapshot Type' => $snapshot['SnapshotType'] ?? 'N/A',
+                    'Status' => $snapshot['Status'] ?? 'N/A',
+                    'Engine' => $snapshot['Engine'] ?? 'N/A',
+                    'Engine Version' => $snapshot['EngineVersion'] ?? 'N/A',
+                    'Allocated Storage (GiB)' => $snapshot['AllocatedStorage'] ?? 'N/A',
+                    'Storage Type' => $snapshot['StorageType'] ?? 'N/A',
+                    'Snapshot Creation Time' => $snapshot['SnapshotCreateTime'] ?? 'N/A',
+                    'IAM Database Authentication Enabled' => $snapshot['IAMDatabaseAuthenticationEnabled'] ? 'Yes' : 'No',
+                    'Encrypted' => $snapshot['Encrypted'] ? 'Yes' : 'No',
+                    'KMS Key ID' => $snapshot['KmsKeyId'] ?? 'N/A',
+                    'License Model' => $snapshot['LicenseModel'] ?? 'N/A',
+                    'DB Snapshot ARN' => $snapshot['DBSnapshotArn'] ?? 'N/A',
+                ];
+            }
+            break;
 
-        case 's3': // New case for S3
+        case 's3':
             $s3Client = new S3Client($sdkConfig);
 
-            // List all buckets
+            #List all buckets
             $result = $s3Client->listBuckets();
 
-            // Iterate over each bucket to fetch more details
+            #Iterate over each bucket to fetch more details
             foreach ($result['Buckets'] as $bucket) {
                 $bucketName = $bucket['Name'];
                 $bucketCreationDate = $bucket['CreationDate'];
 
-                // Fetch the bucket location (region)
+                #Fetch the bucket location (region)
                 $locationResult = $s3Client->getBucketLocation(['Bucket' => $bucketName]);
-                $bucketRegion = $locationResult['LocationConstraint'] ?? 'us-east-1'; // Default to us-east-1 if not specified
+                $bucketRegion = $locationResult['LocationConstraint'] ?? 'us-east-1'; #Default to us-east-1 if not specified
 
-                // Check IAM Access Analyzer for public access policy status
+                #Check IAM Access Analyzer for public access policy status
                 try {
                     $policyStatusResult = $s3Client->getBucketPolicyStatus(['Bucket' => $bucketName]);
                     $accessAnalyzerStatus = $policyStatusResult['PolicyStatus']['IsPublic'] ? 'Public' : 'Private';
                 } catch (AwsException $e) {
-                    $accessAnalyzerStatus = 'N/A'; // If policy check fails, default to N/A
+                    $accessAnalyzerStatus = 'N/A'; #If policy check fails, default to N/A
                 }
 
-                // Add bucket data to inventory
+                #Add bucket data to inventory
                 $inventoryData[] = [
+                    'Account Id' => $accountId,
+                    'Account Name' => $accountName,
                     'Name' => $bucketName,
                     'AWS Region' => $bucketRegion,
                     'IAM Access Analyzer' => $accessAnalyzerStatus,
@@ -242,32 +284,32 @@ try {
             throw new Exception("Unsupported service selected.");
     }
 
-    // Create the filename for the CSV
-    $date = date('Y-m-d');
+    #Create the filename for the CSV
+    $date = date('d-m-Y-his');
     $filename = strtolower(str_replace(' ', '-', $accountName)) . '-' . strtolower($service) . '-inventory-' . $date . '.csv';
 
-    // Set headers to force download of the CSV
+    #Set headers to force download of the CSV
     header('Content-Type: text/csv');
     header('Content-Disposition: attachment; filename="' . $filename . '"');
     header('Pragma: no-cache');
     header('Expires: 0');
 
-    // Open output stream to the browser instead of creating a file on the server
+    #Open output stream to the browser instead of creating a file on the server
     $output = fopen('php://output', 'w');
 
-    // Write the header row if there's data
+    #Write the header row if there's data
     if (!empty($inventoryData)) {
         fputcsv($output, array_keys($inventoryData[0]));
     }
 
-    // Write each row of instance data
+    #Write each row of instance data
     foreach ($inventoryData as $data) {
         fputcsv($output, $data);
     }
 
-    // Close the output stream
+    #Close the output stream
     fclose($output);
-    exit(); // End the script after outputting the CSV
+    exit(); #End the script after outputting the CSV
 
 } catch (AwsException $e) {
     echo "Error: " . $e->getMessage();

@@ -133,16 +133,33 @@ $("#inventoryCollectorFormAWS").validate({
 });
 
 
-    /* Form Custom Select Initialization*/
+/* Form Custom Select Initialization*/
 $('.select2-service').select2({
     theme: 'bootstrap4',
     placeholder: 'Select AWS Service',
+    templateSelection: formatIcon,
+    templateResult: formatIcon,
+    allowHtml: true
 }).on('select2:opening', function(e) {
     $(this).data('select2').$dropdown.find(':input.select2-search__field').attr('placeholder', 'Search AWS Service')
 });
+function formatIcon(icon) {
+    return $('<span><i class="' + $(icon.element).data('icon') + '"></i> ' + icon.text + '</span>');
+}
 $('.select2-region').select2({
     theme: 'bootstrap4',
     placeholder: 'Select AWS Region',
+    templateSelection: formatRegion,
+    templateResult: formatRegion,
+    allowHtml: true
 }).on('select2:opening', function(e) {
-    $(this).data('select2').$dropdown.find(':input.select2-search__field').attr('placeholder', 'Search AWS Region')
+    $(this).data('select2').$dropdown.find(':input.select2-search__field').attr('placeholder', 'Search AWS Region');
 });
+
+function formatRegion(region) {
+    if (!region.id) {
+        return region.text;
+    }
+    var flagClass = $(region.element).data('flag');
+    return $('<span><i class="' + flagClass + '"></i> ' + region.text + '</span>');
+}
